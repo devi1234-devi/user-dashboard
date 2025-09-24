@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>User Management Dashboard</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      background: #f9f9f9;
+      color: #333;
+    }
+    header {
+      background: #4CAF50;
+      color: white;
+      padding: 1rem;
+      text-align: center;
+    }
+    .container {
+      padding: 20px;
+      max-width: 1200px;
+      margin: auto;
+    }
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      margin-bottom: 1rem;
+      gap: 10px;
+    }
+    button {
+      padding: 8px 14px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    button.primary { background: #4CAF50; color: white; }
+    button.danger { background: #e74c3c; color: white; }
+    button.secondary { background: #3498db; color: white; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 1rem;
+    }
+    table th, table td {
+      border: 1px solid #ddd;
+      padding: 8px;
+      text-align: left;
+    }
+    table th {
+      cursor: pointer;
+      background: #f1f1f1;
+    }
+    .pagination {
+      margin-top: 10px;
+    }
+    .pagination select {
+      padding: 5px;
+    }
+    /* Modal */
+    .modal {
+      display: none;
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: rgba(0,0,0,0.5);
+      justify-content: center; align-items: center;
+    }
+    .modal-content {
+      background: white;
+      padding: 20px;
+      width: 400px;
+      border-radius: 8px;
+      position: relative;
+    }
+    .modal-content h2 { margin-top: 0; }
+    .modal-content label {
+      display: block;
+      margin: 8px 0 4px;
+    }
+    .modal-content input, .modal-content select {
+      width: 100%;
+      padding: 8px;
+      margin-bottom: 10px;
+    }
+    .close {
+      position: absolute;
+      top: 10px; right: 15px;
+      cursor: pointer;
+      font-size: 20px;
+      font-weight: bold;
+    }
+    @media (max-width: 600px) {
+      .controls { flex-direction: column; align-items: stretch; }
+      .modal-content { width: 95%; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>User Management Dashboard</h1>
+  </header>
+
+  <div class="container">
+    <div class="controls">
+      <button class="primary" onclick="openModal('add')">+ Add User</button>
+      <input type="text" id="searchInput" placeholder="Search users..." oninput="searchUsers()">
+      <button class="secondary" onclick="openFilter()">Filter</button>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th onclick="sortTable('id')">ID</th>
+          <th onclick="sortTable('firstName')">First Name</th>
+          <th onclick="sortTable('lastName')">Last Name</th>
+          <th onclick="sortTable('email')">Email</th>
+          <th onclick="sortTable('department')">Department</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="userTableBody"></tbody>
+    </table>
+
+    <div class="pagination">
+      Show 
+      <select id="pageLimit" onchange="changeLimit()">
+        <option value="10">10</option>
+        <option value="25">25</option>
+        <option value="50">50</option>
+        <option value="100">100</option>
+      </select>
+      entries
+    </div>
+  </div>
+
+  <!-- User Modal -->
+  <div class="modal" id="userModal">
+    <div class="modal-content">
+      <span class="close" onclick="closeModal()">&times;</span>
+      <h2 id="modalTitle">Add User</h2>
+      <form id="userForm" onsubmit="submitUser(event)">
+        <input type="hidden" id="userId">
+        <label>First Name</label>
+        <input type="text" id="firstName" required>
+        <label>Last Name</label>
+        <input type="text" id="lastName" required>
+        <label>Email</label>
+        <input type="email" id="email" required>
+        <label>Department</label>
+        <input type="text" id="department" required>
+        <button type="submit" class="primary">Save</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Filter Modal -->
+  <div class="modal" id="filterModal">
+    <div class="modal-content">
+      <span class="close" onclick="closeFilter()">&times;</span>
+      <h2>Filter Users</h2>
+      <label>First Name</label>
+      <input type="text" id="filterFirst">
+      <label>Last Name</label>
+      <input type="text" id="filterLast">
+      <label>Email</label>
+      <input type="text" id="filterEmail">
+      <label>Department</label>
+      <input type="text" id="filterDept">
+      <button class="primary" onclick="applyFilter()">Apply</button>
+      <button class="secondary" onclick="clearFilter()">Clear</button>
+    </div>
+  </div>
+
+  <script>
+    const API_URL = "https://my-json-server.typicode.com/devi1234-devi/user-dashboard"; 
+    let users = [];
+    let filteredUsers = [];
+    let currentSort = { key: '', asc: true };
+    let limit = 10;
+
+    async function fetchUsers() {
+      try {
+        const res = await fetch(API_URL);
+        if (!res.ok) throw new Error("Failed to fetch");
+        const data = await res.json();
+        users = data.map(u => ({
+          id: u.id,
+          firstName: u.name?.split(" ")[0] || "N/A",
+          lastName: u.name?.split(" ")[1] || "",
+          email: u.email || "not-provided@example.com",
+          department: u.company.name || "General"
+        }));
+        filteredUsers = [...users];
+        renderTable();
+      } catch (err) {
+        alert("Error loading users: " + err.message);
+      }
+    }
+
+    function renderTable() {
+      const tbody = document.getElementById("userTableBody");
+      tbody.innerHTML = "";
+      filteredUsers.slice(0, limit).forEach(user => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${user.id}</td>
+          <td>${user.firstName}</td>
+          <td>${user.lastName}</td>
+          <td>${user.email}</td>
+          <td>${user.department}</td>
+          <td>
+            <button class="secondary" onclick="openModal('edit', ${user.id})">Edit</button>
+            <button class="danger" onclick="deleteUser(${user.id})">Delete</button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    function openModal(mode, id=null) {
+      document.getElementById("userModal").style.display = "flex";
+      document.getElementById("modalTitle").innerText = mode === "add" ? "Add User" : "Edit User";
+      if (mode === "edit") {
+        const user = users.find(u => u.id === id);
+        document.getElementById("userId").value = user.id;
+        document.getElementById("firstName").value = user.firstName;
+        document.getElementById("lastName").value = user.lastName;
+        document.getElementById("email").value = user.email;
+        document.getElementById("department").value = user.department;
+      } else {
+        document.getElementById("userForm").reset();
+        document.getElementById("userId").value = "";
+      }
+    }
+    function closeModal() { document.getElementById("userModal").style.display = "none"; }
+
+    async function submitUser(e) {
+      e.preventDefault();
+      const id = document.getElementById("userId").value;
+      const userData = {
+        firstName: document.getElementById("firstName").value.trim(),
+        lastName: document.getElementById("lastName").value.trim(),
+        email: document.getElementById("email").value.trim(),
+        department: document.getElementById("department").value.trim()
+      };
+      try {
+        if (id) {
+          await fetch(API_URL + "/" + id, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(userData)
+          });
+          const idx = users.findIndex(u => u.id == id);
+          users[idx] = { id: Number(id), ...userData };
+        } else {
+          const res = await fetch(API_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(userData)
+          });
+          const newUser = await res.json();
+          newUser.id = Date.now();
+          users.push({ ...newUser, ...userData });
+        }
+        filteredUsers = [...users];
+        renderTable();
+        closeModal();
+      } catch (err) {
+        alert("Error saving user: " + err.message);
+      }
+    }
+
+    async function deleteUser(id) {
+      if (!confirm("Delete this user?")) return;
+      try {
+        await fetch(API_URL + "/" + id, { method: "DELETE" });
+        users = users.filter(u => u.id !== id);
+        filteredUsers = [...users];
+        renderTable();
+      } catch (err) {
+        alert("Error deleting user: " + err.message);
+      }
+    }
+
+    function searchUsers() {
+      const q = document.getElementById("searchInput").value.toLowerCase();
+      filteredUsers = users.filter(u =>
+        u.firstName.toLowerCase().includes(q) ||
+        u.lastName.toLowerCase().includes(q) ||
+        u.email.toLowerCase().includes(q) ||
+        u.department.toLowerCase().includes(q)
+      );
+      renderTable();
+    }
+
+    function sortTable(key) {
+      currentSort.asc = currentSort.key === key ? !currentSort.asc : true;
+      currentSort.key = key;
+      filteredUsers.sort((a,b) => {
+        if (a[key] < b[key]) return currentSort.asc ? -1 : 1;
+        if (a[key] > b[key]) return currentSort.asc ? 1 : -1;
+        return 0;
+      });
+      renderTable();
+    }
+
+    function changeLimit() {
+      limit = Number(document.getElementById("pageLimit").value);
+      renderTable();
+    }
+
+    // Filter functions
+    function openFilter() { document.getElementById("filterModal").style.display = "flex"; }
+    function closeFilter() { document.getElementById("filterModal").style.display = "none"; }
+    function applyFilter() {
+      const fFirst = document.getElementById("filterFirst").value.toLowerCase();
+      const fLast = document.getElementById("filterLast").value.toLowerCase();
+      const fEmail = document.getElementById("filterEmail").value.toLowerCase();
+      const fDept = document.getElementById("filterDept").value.toLowerCase();
+      filteredUsers = users.filter(u =>
+        (!fFirst || u.firstName.toLowerCase().includes(fFirst)) &&
+        (!fLast || u.lastName.toLowerCase().includes(fLast)) &&
+        (!fEmail || u.email.toLowerCase().includes(fEmail)) &&
+        (!fDept || u.department.toLowerCase().includes(fDept))
+      );
+      renderTable();
+      closeFilter();
+    }
+    function clearFilter() {
+      document.getElementById("filterFirst").value = "";
+      document.getElementById("filterLast").value = "";
+      document.getElementById("filterEmail").value = "";
+      document.getElementById("filterDept").value = "";
+      filteredUsers = [...users];
+      renderTable();
+      closeFilter();
+    }
+
+    fetchUsers();
+  </script>
+</body>
+</html>
